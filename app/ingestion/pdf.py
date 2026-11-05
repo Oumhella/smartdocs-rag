@@ -82,10 +82,11 @@ def chunk_text(
     chunk_size: int = 1000,
     overlap: int = 150,
 ) -> list[TextChunk]:
-    """Split extracted text into character-sized chunks, preserving metadata.
+    """Split extracted text near word boundaries, preserving metadata.
 
-    The overlap repeats a small amount of text between neighboring chunks. This
-    helps later search retain context when a useful passage crosses a boundary.
+    The overlap repeats some text between neighboring chunks to preserve
+    context. Both edges move to whitespace when possible, so ordinary words are
+    not cut in half. A single token longer than chunk_size must be hard-split.
     Chunk indexes start at 1 and restart for each extracted page or text file.
     """
     if chunk_size <= 0:
@@ -94,7 +95,6 @@ def chunk_text(
         raise ValueError("overlap must be non-negative and smaller than chunk_size")
 
     chunks: list[TextChunk] = []
-    step = chunk_size - overlap
 
     for content in contents:
         text = clean_text(content["text"])
@@ -103,6 +103,19 @@ def chunk_text(
 
         while start < len(text):
             end = min(start + chunk_size, len(text))
+            hard_split = False
+
+            if end < len(text):
+                boundary = end
+                while boundary > start and not text[boundary - 1].isspace():
+                    boundary -= 1
+                if boundary > start:
+                    end = boundary
+                else:
+                    # No whitespace exists in this chunk window, so split the
+                    # unusually long token to guarantee forward progress.
+                    hard_split = True
+
             chunk_text = text[start:end].strip()
             if chunk_text:
                 chunks.append(
@@ -114,7 +127,19 @@ def chunk_text(
                     }
                 )
                 chunk_index += 1
-            start += step
+
+            if end == len(text):
+                break
+
+            next_start = max(start + 1, end - overlap)
+            if not hard_split:
+                # Move the overlap start forward to the next whole word.
+                while next_start < end and not text[next_start - 1].isspace():
+                    next_start += 1
+                while next_start < end and text[next_start].isspace():
+                    next_start += 1
+
+            start = next_start
 
     return chunks
 
