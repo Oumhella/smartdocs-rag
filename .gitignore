@@ -58,3 +58,6 @@ Desktop.ini
 frontend/node_modules/
 frontend/dist/
 frontend/.angular/
+
+# Locally persisted ChromaDB data (keep source documents in data/ tracked)
+data/chroma/
