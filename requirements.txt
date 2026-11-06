@@ -1,3 +1,5 @@
 PyMuPDF>=1.26,<2
 sentence-transformers>=5.0,<6
 chromadb>=1.0,<2
+groq>=0.30,<2
+python-dotenv>=1.0,<2
