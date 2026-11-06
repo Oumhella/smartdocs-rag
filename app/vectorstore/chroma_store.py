@@ -81,6 +81,31 @@ class ChromaVectorStore:
             self.collection.delete(ids=ids)
         return len(ids)
 
+    def list_documents(self) -> list[dict[str, str | int]]:
+        """Summarize stored chunks as one record per indexed document."""
+        stored = self.collection.get(include=["metadatas"])
+        documents: dict[str, dict[str, str | int]] = {}
+
+        for metadata in stored["metadatas"] or []:
+            if not metadata:
+                continue
+            document_id = str(metadata.get("document_id", ""))
+            if not document_id:
+                continue
+
+            if document_id not in documents:
+                documents[document_id] = {
+                    "document_id": document_id,
+                    "filename": str(metadata.get("filename", "Unknown")),
+                    "chunks_stored": 0,
+                }
+            documents[document_id]["chunks_stored"] += 1
+
+        return sorted(
+            documents.values(),
+            key=lambda document: str(document["filename"]).casefold(),
+        )
+
     def search(self, query: str, top_k: int = 4) -> list[dict[str, Any]]:
         """Return nearest chunks, their metadata, cosine distance and similarity."""
         if not query.strip():

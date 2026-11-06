@@ -61,3 +61,11 @@ frontend/.angular/
 
 # Locally persisted ChromaDB data (keep source documents in data/ tracked)
 data/chroma/
+data/uploads/
+
+# Streamlit local credentials
+.streamlit/secrets.toml
+.streamlit/credentials.toml
+
+# Temporary upload files
+*.tmp

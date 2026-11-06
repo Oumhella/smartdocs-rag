@@ -32,6 +32,10 @@ class DocumentService:
         """Delete a document's stored chunks by its returned document ID."""
         return self.vector_store.delete_document(document_id)
 
+    def list_documents(self) -> list[dict[str, str | int]]:
+        """List indexed documents with their stored chunk counts."""
+        return self.vector_store.list_documents()
+
     def search(self, query: str, top_k: int = 4) -> list[dict[str, object]]:
         """Search indexed document chunks without generating an LLM answer."""
         return self.vector_store.search(query=query, top_k=top_k)
