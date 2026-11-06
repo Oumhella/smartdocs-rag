@@ -1,5 +1,7 @@
 """Groq implementation of the provider-independent LLM interface."""
 
+from typing import Any
+
 from groq import Groq
 
 from app.core.config import Settings
@@ -17,17 +19,33 @@ class GroqLLMClient:
 
         self.client = Groq(api_key=self.settings.groq_api_key)
 
-    def generate(self, *, system_prompt: str, user_prompt: str) -> str:
-        """Generate a response; keep provider-specific details in this class."""
-        completion = self.client.chat.completions.create(
-            model=self.settings.groq_model,
-            messages=[
+    def generate(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: dict[str, Any] | None = None,
+    ) -> str:
+        """Generate a response and translate the generic schema for Groq."""
+        request: dict[str, Any] = {
+            "model": self.settings.groq_model,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            max_completion_tokens=800,
-            reasoning_effort="low",
-        )
+            "max_completion_tokens": 800,
+            "reasoning_effort": "low",
+        }
+        if response_schema is not None:
+            request["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "smartdocs_answer",
+                    "strict": True,
+                    "schema": response_schema,
+                },
+            }
+        completion = self.client.chat.completions.create(**request)
 
         answer = completion.choices[0].message.content
         if not answer:

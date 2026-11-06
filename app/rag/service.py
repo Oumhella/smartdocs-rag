@@ -1,7 +1,6 @@
 """Retrieve evidence and generate answers with validated source references."""
 
 import json
-import re
 from typing import Any
 
 from app.core.config import Settings
@@ -15,7 +14,15 @@ from app.rag.prompts import (
 from app.vectorstore.chroma_store import ChromaVectorStore
 
 
-_SOURCE_LABEL = re.compile(r"\[(S\d+)\]")
+ANSWER_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string"},
+        "source_ids": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["answer", "source_ids"],
+    "additionalProperties": False,
+}
 
 
 class RAGService:
@@ -85,30 +92,20 @@ class RAGService:
         raw_answer = self.llm_client.generate(
             system_prompt=SYSTEM_PROMPT,
             user_prompt=user_prompt,
+            response_schema=ANSWER_SCHEMA,
         ).strip()
 
-        if raw_answer.casefold() == INSUFFICIENT_CONTEXT_ANSWER.casefold():
-            return {
-                "answer": INSUFFICIENT_CONTEXT_ANSWER,
-                "sources": [],
-                "retrieved_count": len(retrieved),
-                "used_llm": True,
-            }
+        try:
+            payload = json.loads(raw_answer)
+        except json.JSONDecodeError:
+            payload = None
 
-        cited_labels = list(
-            dict.fromkeys(
-                match
-                for match in _SOURCE_LABEL.findall(raw_answer)
-                if match in source_map
-            )
-        )
-        # Do not return fabricated citations as if they were verified sources.
-        answer_text = _SOURCE_LABEL.sub(
-            lambda match: match.group(0) if match.group(1) in source_map else "",
-            raw_answer,
-        ).strip()
-
-        if not cited_labels:
+        if (
+            not isinstance(payload, dict)
+            or not isinstance(payload.get("answer"), str)
+            or not isinstance(payload.get("source_ids"), list)
+            or not all(isinstance(label, str) for label in payload["source_ids"])
+        ):
             return {
                 "answer": UNVERIFIABLE_ANSWER,
                 "sources": [],
@@ -116,8 +113,29 @@ class RAGService:
                 "used_llm": True,
             }
 
+        answer_text = payload["answer"].strip()
+        cited_labels = list(dict.fromkeys(payload["source_ids"]))
+
+        if answer_text.casefold() == INSUFFICIENT_CONTEXT_ANSWER.casefold():
+            return {
+                "answer": INSUFFICIENT_CONTEXT_ANSWER,
+                "sources": [],
+                "retrieved_count": len(retrieved),
+                "used_llm": True,
+            }
+
+        # Reject unknown IDs so a model cannot create a citation that looks real.
+        if not cited_labels or any(label not in source_map for label in cited_labels):
+            return {
+                "answer": UNVERIFIABLE_ANSWER,
+                "sources": [],
+                "retrieved_count": len(retrieved),
+                "used_llm": True,
+            }
+
+        references = ", ".join(f"[{label}]" for label in cited_labels)
         return {
-            "answer": answer_text,
+            "answer": f"{answer_text}\n\nSources: {references}",
             "sources": [source_map[label] for label in cited_labels],
             "retrieved_count": len(retrieved),
             "used_llm": True,
