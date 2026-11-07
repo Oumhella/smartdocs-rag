@@ -1,21 +1,41 @@
 """Fast local checks for ingestion and retrieval failure modes."""
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from typing import Iterator
 
 from fastapi.testclient import TestClient
 
-from app.api.main import app
+from app.api.main import app, authenticated_user
 from app.core.config import Settings
 from app.evaluation.metrics import reciprocal_rank, summarize
 from app.ingestion.pdf import process_document
 from app.rag.prompts import SYSTEM_PROMPT
 from app.rag.service import RAGService
 from app.services.document_service import DocumentService
-from app.services.conversation_service import DEFAULT_CONVERSATION_ID
+from app.services.conversation_service import (
+    DEFAULT_CONVERSATION_ID,
+    ConversationService,
+)
+
+
+# API tests use a deterministic authenticated principal; auth token validation
+# has dedicated tests in test_conversations.py.
+app.dependency_overrides[authenticated_user] = lambda: "user_test"
+
+
+@contextmanager
+def test_api_conversations() -> Iterator[ConversationService]:
+    """Give API tests an isolated DB without touching a developer's data."""
+    with tempfile.TemporaryDirectory() as directory:
+        conversations = ConversationService(Path(directory) / "sessions.sqlite3")
+        conversations.claim_unowned_conversations("user_test")
+        with patch("app.api.main.get_conversation_service", return_value=conversations):
+            yield conversations
 
 
 class StubVectorStore:
@@ -28,6 +48,7 @@ class StubVectorStore:
         query: str,
         top_k: int = 4,
         conversation_id: str | None = None,
+        owner_user_id: str | None = None,
     ) -> list[dict[str, object]]:
         return [
             {
@@ -44,12 +65,18 @@ class StubVectorStore:
 
 class MemoryDocumentStore:
     def __init__(self) -> None:
-        self.documents: dict[tuple[str, str, str], dict[str, object]] = {}
+        self.documents: dict[tuple[str, str, str, str | None], dict[str, object]] = {}
 
     def find_document_by_hash(
-        self, filename: str, content_sha256: str, conversation_id: str
+        self,
+        filename: str,
+        content_sha256: str,
+        conversation_id: str,
+        owner_user_id: str | None = None,
     ) -> dict[str, str | int] | None:
-        document = self.documents.get((filename, content_sha256, conversation_id))
+        document = self.documents.get(
+            (filename, content_sha256, conversation_id, owner_user_id)
+        )
         if document is None:
             return None
         return {
@@ -64,10 +91,11 @@ class MemoryDocumentStore:
         chunks: list[dict[str, object]],
         *,
         conversation_id: str,
+        owner_user_id: str | None = None,
         content_sha256: str,
     ) -> int:
         filename = str(chunks[0]["filename"])
-        self.documents[(filename, content_sha256, conversation_id)] = {
+        self.documents[(filename, content_sha256, conversation_id, owner_user_id)] = {
             "document_id": document_id,
             "filename": filename,
             "chunks_stored": len(chunks),
@@ -75,7 +103,9 @@ class MemoryDocumentStore:
         return len(chunks)
 
     def list_documents(
-        self, conversation_id: str | None = None
+        self,
+        conversation_id: str | None = None,
+        owner_user_id: str | None = None,
     ) -> list[dict[str, str | int]]:
         return [
             {
@@ -83,14 +113,21 @@ class MemoryDocumentStore:
                 "filename": str(document["filename"]),
                 "chunks_stored": int(document["chunks_stored"]),
             }
-            for (filename, _digest, owner), document in self.documents.items()
-            if conversation_id is None or owner == conversation_id
+            for (filename, _digest, conversation, owner), document in self.documents.items()
+            if (conversation_id is None or conversation == conversation_id)
+            and (owner_user_id is None or owner == owner_user_id)
         ]
 
-    def delete_document(self, document_id: str, conversation_id: str | None = None) -> int:
+    def delete_document(
+        self,
+        document_id: str,
+        conversation_id: str | None = None,
+        owner_user_id: str | None = None,
+    ) -> int:
         for key, document in list(self.documents.items()):
             if document["document_id"] == document_id and (
-                conversation_id is None or key[2] == conversation_id
+                (conversation_id is None or key[2] == conversation_id)
+                and (owner_user_id is None or key[3] == owner_user_id)
             ):
                 del self.documents[key]
                 return int(document["chunks_stored"])
@@ -99,8 +136,14 @@ class MemoryDocumentStore:
     def assign_legacy_chunks(self, conversation_id: str) -> int:
         return 0
 
-    def delete_conversation(self, conversation_id: str) -> int:
-        removed = [key for key in self.documents if key[2] == conversation_id]
+    def delete_conversation(
+        self, conversation_id: str, owner_user_id: str | None = None
+    ) -> int:
+        removed = [
+            key for key in self.documents
+            if key[2] == conversation_id
+            and (owner_user_id is None or key[3] == owner_user_id)
+        ]
         for key in removed:
             del self.documents[key]
         return len(removed)
@@ -148,16 +191,19 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_empty_upload_returns_client_error(self) -> None:
         client = TestClient(app)
-        response = client.post(
-            "/api/documents/upload",
-            files={"file": ("empty.txt", b"", "text/plain")},
-        )
+        with test_api_conversations():
+            response = client.post(
+                "/api/documents/upload",
+                files={"file": ("empty.txt", b"", "text/plain")},
+            )
         self.assertEqual(response.status_code, 422)
 
     def test_corrupted_pdf_upload_returns_client_error(self) -> None:
         client = TestClient(app)
         service = DocumentService(vector_store=object())  # type: ignore[arg-type]
-        with patch("app.api.main.get_document_service", return_value=service):
+        with test_api_conversations(), patch(
+            "app.api.main.get_document_service", return_value=service
+        ):
             response = client.post(
                 "/api/documents/upload",
                 files={"file": ("broken.pdf", b"not a PDF", "application/pdf")},
@@ -187,7 +233,9 @@ class ReliabilityTests(unittest.TestCase):
             path.write_text("The employee reports sickness to a manager.", encoding="utf-8")
             service = DocumentService(vector_store=MemoryDocumentStore())  # type: ignore[arg-type]
             client = TestClient(app)
-            with patch("app.api.main.get_document_service", return_value=service):
+            with test_api_conversations(), patch(
+                "app.api.main.get_document_service", return_value=service
+            ):
                 first = client.post(
                     "/api/documents/upload",
                     files={"file": ("same.txt", path.read_bytes(), "text/plain")},

@@ -3,16 +3,21 @@
 from pathlib import Path
 import tempfile
 import unittest
+import os
 from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
-from app.api.main import app
+from app.api.main import app, authenticated_user
+from app.core.auth import require_streamlit_user
 from app.services.conversation_service import (
     DEFAULT_CONVERSATION_ID,
     ConversationService,
 )
 from app.vectorstore.chroma_store import ChromaVectorStore
+
+
+app.dependency_overrides[authenticated_user] = lambda: "user_test"
 
 
 class FixedEmbedder:
@@ -24,12 +29,35 @@ class FixedEmbedder:
 
 
 class ConversationTests(unittest.TestCase):
+    def test_conversations_are_owned_by_their_creator(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conversations = ConversationService(Path(directory) / "sessions.sqlite3")
+            private = conversations.create("user-a", "Private notes")
+
+            self.assertIsNotNone(conversations.get(private["id"], "user-a"))
+            self.assertIsNone(conversations.get(private["id"], "user-b"))
+            self.assertEqual(
+                [item["id"] for item in conversations.list_conversations("user-a")],
+                [private["id"]],
+            )
+            self.assertEqual(conversations.list_conversations("user-b"), [])
+
+    def test_internal_api_auth_checks_the_shared_secret(self) -> None:
+        with patch.dict(os.environ, {"SMARTDOCS_INTERNAL_AUTH_TOKEN": "test-secret"}):
+            self.assertEqual(
+                require_streamlit_user("test-secret", "clerk-user-1"),
+                "clerk-user-1",
+            )
+            with self.assertRaises(Exception) as error:
+                require_streamlit_user("wrong-secret", "clerk-user-1")
+            self.assertEqual(error.exception.status_code, 401)
+
     def test_history_persists_and_is_scoped_by_conversation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "conversations.sqlite3"
             conversations = ConversationService(database)
-            first = conversations.create("  Policy questions  ")
-            second = conversations.create("Engineering notes")
+            first = conversations.create("user-a", "  Policy questions  ")
+            second = conversations.create("user-a", "Engineering notes")
             conversations.add_message(first["id"], "user", "Question one")
             conversations.add_message(
                 first["id"], "assistant", "Answer one", [{"source_id": "S1"}]
@@ -106,6 +134,7 @@ class ConversationTests(unittest.TestCase):
     def test_conversation_api_creates_reads_and_deletes_history(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             conversations = ConversationService(Path(directory) / "sessions.sqlite3")
+            conversations.claim_unowned_conversations("user_test")
             documents = Mock()
             documents.delete_conversation.return_value = 2
             client = TestClient(app)
@@ -131,7 +160,7 @@ class ConversationTests(unittest.TestCase):
     def test_chat_uses_and_persists_the_selected_conversation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             conversations = ConversationService(Path(directory) / "sessions.sqlite3")
-            selected = conversations.create("Selected workspace")
+            selected = conversations.create("user_test", "Selected workspace")
             rag = Mock()
             rag.answer.return_value = {
                 "answer": "Grounded response",
@@ -158,6 +187,7 @@ class ConversationTests(unittest.TestCase):
                 "What does the guide say?",
                 top_k=4,
                 conversation_id=selected["id"],
+                owner_user_id="user_test",
             )
             self.assertEqual([message["role"] for message in history], ["user", "assistant"])
             self.assertEqual(history[1]["sources"][0]["source_id"], "S1")

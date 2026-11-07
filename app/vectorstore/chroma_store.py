@@ -43,6 +43,7 @@ class ChromaVectorStore:
         chunks: list[TextChunk],
         *,
         conversation_id: str,
+        owner_user_id: str | None = None,
         content_sha256: str | None = None,
     ) -> int:
         """Embed and store one document's chunks; return the number stored."""
@@ -66,6 +67,8 @@ class ChromaVectorStore:
                 "filename": chunk["filename"],
                 "chunk_index": chunk["chunk_index"],
             }
+            if owner_user_id is not None:
+                metadata["owner_user_id"] = owner_user_id
             if content_sha256 is not None:
                 metadata["content_sha256"] = content_sha256
             # Chroma metadata does not accept None; text formats have no page.
@@ -82,15 +85,21 @@ class ChromaVectorStore:
         return len(chunks)
 
     def delete_document(
-        self, document_id: str, conversation_id: str | None = None
+        self,
+        document_id: str,
+        conversation_id: str | None = None,
+        owner_user_id: str | None = None,
     ) -> int:
         """Delete every chunk belonging to a document; return chunks deleted."""
         if not document_id:
             raise ValueError("document_id must not be empty")
 
-        where: dict[str, Any] = {"document_id": document_id}
+        filters: list[dict[str, Any]] = [{"document_id": document_id}]
         if conversation_id is not None:
-            where = {"$and": [where, {"conversation_id": conversation_id}]}
+            filters.append({"conversation_id": conversation_id})
+        if owner_user_id is not None:
+            filters.append({"owner_user_id": owner_user_id})
+        where = {"$and": filters} if len(filters) > 1 else filters[0]
         existing = self.collection.get(
             where=where,
             include=["metadatas"],
@@ -101,14 +110,21 @@ class ChromaVectorStore:
         return len(ids)
 
     def find_document_by_hash(
-        self, filename: str, content_sha256: str, conversation_id: str
+        self,
+        filename: str,
+        content_sha256: str,
+        conversation_id: str,
+        owner_user_id: str | None = None,
     ) -> dict[str, str | int] | None:
         """Find a previously indexed document with the same name and bytes."""
+        filters: list[dict[str, Any]] = [
+            {"content_sha256": content_sha256},
+            {"conversation_id": conversation_id},
+        ]
+        if owner_user_id is not None:
+            filters.append({"owner_user_id": owner_user_id})
         matches = self.collection.get(
-            where={"$and": [
-                {"content_sha256": content_sha256},
-                {"conversation_id": conversation_id},
-            ]},
+            where={"$and": filters},
             include=["metadatas"],
         )
         duplicate_metadata = [
@@ -125,11 +141,19 @@ class ChromaVectorStore:
         return None
 
     def list_documents(
-        self, conversation_id: str | None = None
+        self,
+        conversation_id: str | None = None,
+        owner_user_id: str | None = None,
     ) -> list[dict[str, str | int]]:
         """Summarize stored chunks as one record per indexed document."""
+        filters: list[dict[str, Any]] = []
+        if conversation_id:
+            filters.append({"conversation_id": conversation_id})
+        if owner_user_id:
+            filters.append({"owner_user_id": owner_user_id})
+        where = {"$and": filters} if len(filters) > 1 else filters[0] if filters else None
         stored = self.collection.get(
-            where={"conversation_id": conversation_id} if conversation_id else None,
+            where=where,
             include=["metadatas"],
         )
         documents: dict[str, dict[str, str | int]] = {}
@@ -159,6 +183,7 @@ class ChromaVectorStore:
         query: str,
         top_k: int = 4,
         conversation_id: str | None = None,
+        owner_user_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return nearest chunks, their metadata, cosine distance and similarity."""
         if not query.strip():
@@ -169,10 +194,16 @@ class ChromaVectorStore:
             return []
 
         query_embedding = self.embedder.embed_query(query)
+        filters: list[dict[str, Any]] = []
+        if conversation_id:
+            filters.append({"conversation_id": conversation_id})
+        if owner_user_id:
+            filters.append({"owner_user_id": owner_user_id})
+        where = {"$and": filters} if len(filters) > 1 else filters[0] if filters else None
         matches = self.collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
-            where={"conversation_id": conversation_id} if conversation_id else None,
+            where=where,
             include=["documents", "metadatas", "distances"],
         )
 
@@ -212,12 +243,40 @@ class ChromaVectorStore:
             self.collection.update(ids=ids, metadatas=metadatas)
         return len(ids)
 
-    def delete_conversation(self, conversation_id: str) -> int:
+    def delete_conversation(
+        self, conversation_id: str, owner_user_id: str | None = None
+    ) -> int:
         """Delete all indexed chunks for one conversation."""
+        where: dict[str, Any] = {"conversation_id": conversation_id}
+        if owner_user_id is not None:
+            where = {"$and": [where, {"owner_user_id": owner_user_id}]}
         existing = self.collection.get(
-            where={"conversation_id": conversation_id}, include=["metadatas"]
+            where=where, include=["metadatas"]
         )
         ids = existing["ids"]
         if ids:
             self.collection.delete(ids=ids)
         return len(ids)
+
+    def assign_conversation_owner(
+        self, conversation_ids: list[str], owner_user_id: str
+    ) -> int:
+        """Tag previously unowned chunks when legacy workspaces are claimed."""
+        if not conversation_ids:
+            return 0
+        owned_ids: list[str] = []
+        owned_metadatas: list[dict[str, Any]] = []
+        stored = self.collection.get(include=["metadatas"])
+        conversation_set = set(conversation_ids)
+        for chunk_id, metadata in zip(stored["ids"], stored["metadatas"] or []):
+            updated = dict(metadata or {})
+            if (
+                updated.get("conversation_id") in conversation_set
+                and "owner_user_id" not in updated
+            ):
+                updated["owner_user_id"] = owner_user_id
+                owned_ids.append(chunk_id)
+                owned_metadatas.append(updated)
+        if owned_ids:
+            self.collection.update(ids=owned_ids, metadatas=owned_metadatas)
+        return len(owned_ids)

@@ -25,6 +25,7 @@ class ConversationService:
                 CREATE TABLE IF NOT EXISTS conversations (
                     id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
+                    owner_user_id TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE TABLE IF NOT EXISTS messages (
@@ -38,8 +39,17 @@ class ConversationService:
                 );
                 """
             )
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(conversations)")
+            }
+            if "owner_user_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE conversations ADD COLUMN owner_user_id TEXT"
+                )
             connection.execute(
-                "INSERT OR IGNORE INTO conversations (id, title) VALUES (?, ?)",
+                "INSERT OR IGNORE INTO conversations (id, title, owner_user_id) "
+                "VALUES (?, ?, NULL)",
                 (DEFAULT_CONVERSATION_ID, "My first conversation"),
             )
 
@@ -54,31 +64,59 @@ class ConversationService:
         finally:
             connection.close()
 
-    def create(self, title: str = "New conversation") -> dict[str, str]:
+    def create(
+        self, owner_user_id: str, title: str = "New conversation"
+    ) -> dict[str, str]:
         clean_title = " ".join(title.split())[:120] or "New conversation"
         conversation_id = uuid4().hex
         with self._connect() as connection:
             connection.execute(
-                "INSERT INTO conversations (id, title) VALUES (?, ?)",
-                (conversation_id, clean_title),
+                "INSERT INTO conversations (id, title, owner_user_id) "
+                "VALUES (?, ?, ?)",
+                (conversation_id, clean_title, owner_user_id),
             )
-        return self.get(conversation_id)  # type: ignore[return-value]
+        return self.get(conversation_id, owner_user_id)  # type: ignore[return-value]
 
-    def get(self, conversation_id: str) -> dict[str, str] | None:
+    def get(
+        self, conversation_id: str, owner_user_id: str | None = None
+    ) -> dict[str, str] | None:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT id, title, created_at FROM conversations WHERE id = ?",
-                (conversation_id,),
-            ).fetchone()
+            if owner_user_id is None:
+                row = connection.execute(
+                    "SELECT id, title, owner_user_id, created_at FROM conversations "
+                    "WHERE id = ?",
+                    (conversation_id,),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT id, title, owner_user_id, created_at FROM conversations "
+                    "WHERE id = ? AND owner_user_id = ?",
+                    (conversation_id, owner_user_id),
+                ).fetchone()
         return dict(row) if row else None
 
-    def list_conversations(self) -> list[dict[str, str]]:
+    def list_conversations(self, owner_user_id: str) -> list[dict[str, str]]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT id, title, created_at FROM conversations "
-                "ORDER BY created_at, id"
+                "SELECT id, title, owner_user_id, created_at FROM conversations "
+                "WHERE owner_user_id = ? ORDER BY created_at, id",
+                (owner_user_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def claim_unowned_conversations(self, owner_user_id: str) -> list[str]:
+        """Assign pre-authentication data to the first signed-in user."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id FROM conversations WHERE owner_user_id IS NULL"
+            ).fetchall()
+            if rows:
+                connection.execute(
+                    "UPDATE conversations SET owner_user_id = ? "
+                    "WHERE owner_user_id IS NULL",
+                    (owner_user_id,),
+                )
+        return [str(row["id"]) for row in rows]
 
     def add_message(
         self,
@@ -111,12 +149,13 @@ class ConversationService:
             ).fetchall()
         return [self._message_dict(row) for row in rows]
 
-    def delete(self, conversation_id: str) -> bool:
+    def delete(self, conversation_id: str, owner_user_id: str) -> bool:
         if conversation_id == DEFAULT_CONVERSATION_ID:
             raise ValueError("The default conversation cannot be deleted")
         with self._connect() as connection:
             cursor = connection.execute(
-                "DELETE FROM conversations WHERE id = ?", (conversation_id,)
+                "DELETE FROM conversations WHERE id = ? AND owner_user_id = ?",
+                (conversation_id, owner_user_id),
             )
         return cursor.rowcount > 0
 

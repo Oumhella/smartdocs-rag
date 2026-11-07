@@ -6,10 +6,11 @@ import shutil
 import tempfile
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.rag.service import RAGService
+from app.core.auth import require_streamlit_user
 from app.services.conversation_service import (
     DEFAULT_CONVERSATION_ID,
     ConversationService,
@@ -62,38 +63,59 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def require_conversation(conversation_id: str) -> dict[str, str]:
-    conversation = get_conversation_service().get(conversation_id)
+def authenticated_user(user_id: str = Depends(require_streamlit_user)) -> str:
+    """Claim legacy data once and return the verified Streamlit user ID."""
+    claimed = get_conversation_service().claim_unowned_conversations(user_id)
+    if claimed:
+        get_document_service().claim_conversations(claimed, user_id)
+    return user_id
+
+
+def require_conversation(conversation_id: str, user_id: str) -> dict[str, str]:
+    conversation = get_conversation_service().get(conversation_id, user_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found.")
     return conversation
 
 
 @app.get("/api/conversations")
-def list_conversations() -> list[dict[str, str]]:
-    return get_conversation_service().list_conversations()
+def list_conversations(
+    user_id: str = Depends(authenticated_user),
+) -> list[dict[str, str]]:
+    return get_conversation_service().list_conversations(user_id)
 
 
 @app.post("/api/conversations", status_code=201)
-def create_conversation(request: ConversationRequest) -> dict[str, str]:
-    return get_conversation_service().create(request.title)
+def create_conversation(
+    request: ConversationRequest,
+    user_id: str = Depends(authenticated_user),
+) -> dict[str, str]:
+    return get_conversation_service().create(user_id, request.title)
 
 
 @app.get("/api/conversations/{conversation_id}/messages")
-def get_conversation_messages(conversation_id: str) -> list[dict[str, Any]]:
-    require_conversation(conversation_id)
+def get_conversation_messages(
+    conversation_id: str,
+    user_id: str = Depends(authenticated_user),
+) -> list[dict[str, Any]]:
+    require_conversation(conversation_id, user_id)
     return get_conversation_service().messages(conversation_id)
 
 
 @app.delete("/api/conversations/{conversation_id}")
-def delete_conversation(conversation_id: str) -> dict[str, str | int]:
-    require_conversation(conversation_id)
+def delete_conversation(
+    conversation_id: str,
+    user_id: str = Depends(authenticated_user),
+) -> dict[str, str | int]:
+    require_conversation(conversation_id, user_id)
     if conversation_id == DEFAULT_CONVERSATION_ID:
         raise HTTPException(
             status_code=400, detail="The default conversation cannot be deleted."
         )
-    deleted_chunks = get_document_service().delete_conversation(conversation_id)
-    get_conversation_service().delete(conversation_id)
+    deleted_chunks = get_document_service().delete_conversation(
+        conversation_id, user_id
+    )
+    get_conversation_service().delete(conversation_id, user_id)
     return {"conversation_id": conversation_id, "chunks_deleted": deleted_chunks}
 
 
@@ -101,6 +123,7 @@ def delete_conversation(conversation_id: str) -> dict[str, str | int]:
 def upload_document(
     file: UploadFile = File(...),
     conversation_id: str = Form(DEFAULT_CONVERSATION_ID),
+    user_id: str = Depends(authenticated_user),
 ) -> dict[str, Any]:
     """Save an upload temporarily, index it, then remove the temporary copy."""
     original_name = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
@@ -110,7 +133,7 @@ def upload_document(
             status_code=415,
             detail="Supported file types are PDF, TXT, and Markdown (.md).",
         )
-    require_conversation(conversation_id)
+    require_conversation(conversation_id, user_id)
 
     try:
         with tempfile.TemporaryDirectory(prefix="smartdocs-upload-") as directory:
@@ -119,7 +142,9 @@ def upload_document(
                 shutil.copyfileobj(file.file, destination)
             if temporary_path.stat().st_size == 0:
                 raise HTTPException(status_code=422, detail="The uploaded file is empty.")
-            return get_document_service().index_file(temporary_path, conversation_id)
+            return get_document_service().index_file(
+                temporary_path, conversation_id, user_id
+            )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     finally:
@@ -129,20 +154,23 @@ def upload_document(
 @app.get("/api/documents")
 def list_documents(
     conversation_id: str = DEFAULT_CONVERSATION_ID,
+    user_id: str = Depends(authenticated_user),
 ) -> list[dict[str, str | int]]:
     """List indexed documents, grouped from their stored chunk metadata."""
-    require_conversation(conversation_id)
-    return get_document_service().list_documents(conversation_id)
+    require_conversation(conversation_id, user_id)
+    return get_document_service().list_documents(conversation_id, user_id)
 
 
 @app.delete("/api/documents/{document_id}")
 def delete_document(
-    document_id: str, conversation_id: str = DEFAULT_CONVERSATION_ID
+    document_id: str,
+    conversation_id: str = DEFAULT_CONVERSATION_ID,
+    user_id: str = Depends(authenticated_user),
 ) -> dict[str, str | int]:
     """Delete every indexed chunk for one document."""
-    require_conversation(conversation_id)
+    require_conversation(conversation_id, user_id)
     deleted_count = get_document_service().delete_document(
-        document_id, conversation_id
+        document_id, conversation_id, user_id
     )
     if deleted_count == 0:
         raise HTTPException(status_code=404, detail="Document not found.")
@@ -150,10 +178,13 @@ def delete_document(
 
 
 @app.post("/api/chat")
-def chat(request: ChatRequest) -> dict[str, Any]:
+def chat(
+    request: ChatRequest,
+    user_id: str = Depends(authenticated_user),
+) -> dict[str, Any]:
     """Answer from retrieved document context and return validated references."""
     try:
-        require_conversation(request.conversation_id)
+        require_conversation(request.conversation_id, user_id)
         conversations = get_conversation_service()
         conversations.add_message(
             request.conversation_id, "user", request.question.strip()
@@ -162,6 +193,7 @@ def chat(request: ChatRequest) -> dict[str, Any]:
             request.question,
             top_k=request.top_k,
             conversation_id=request.conversation_id,
+            owner_user_id=user_id,
         )
         conversations.add_message(
             request.conversation_id,

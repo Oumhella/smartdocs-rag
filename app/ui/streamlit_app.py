@@ -1,16 +1,41 @@
 """Streamlit interface for conversation-scoped SmartDocs workspaces."""
 
 import os
+from pathlib import Path
 
 import requests
 import streamlit as st
+from dotenv import load_dotenv
 
 
 API_URL = os.getenv("SMARTDOCS_API_URL", "http://127.0.0.1:8000").rstrip("/")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONVERSATION_ID = "default"
 SUPPORTED_TYPES = ["pdf", "txt", "md"]
+load_dotenv(PROJECT_ROOT / ".env")
 
 st.set_page_config(page_title="SmartDocs", page_icon="📚", layout="wide")
+
+if not st.user.is_logged_in:
+    st.title("Sign in to SmartDocs")
+    st.caption("Your conversations and documents are private to your account.")
+    if st.button("Continue with Clerk", type="primary"):
+        st.login("clerk")
+    st.stop()
+
+CLERK_USER_ID = st.user.get("sub")
+INTERNAL_AUTH_TOKEN = os.getenv("SMARTDOCS_INTERNAL_AUTH_TOKEN")
+if not CLERK_USER_ID:
+    st.error("Clerk did not return a user ID. Check the OIDC `openid` scope.")
+    st.stop()
+if not INTERNAL_AUTH_TOKEN:
+    st.error("Set SMARTDOCS_INTERNAL_AUTH_TOKEN in your local .env file.")
+    st.stop()
+API_HEADERS = {
+    "X-SmartDocs-Internal-Token": INTERNAL_AUTH_TOKEN,
+    "X-SmartDocs-User-ID": str(CLERK_USER_ID),
+}
+
 st.title("SmartDocs")
 st.caption("Each conversation has its own documents and saved chat history.")
 
@@ -39,10 +64,13 @@ def show_sources(sources: list[dict[str, object]]) -> None:
 
 
 with st.sidebar:
+    st.caption(f"Signed in as {st.user.get('email', CLERK_USER_ID)}")
+    if st.button("Sign out"):
+        st.logout()
     st.header("Conversations")
     try:
         conversations_response = requests.get(
-            f"{API_URL}/api/conversations", timeout=30
+            f"{API_URL}/api/conversations", headers=API_HEADERS, timeout=30
         )
         conversations_response.raise_for_status()
         conversations = conversations_response.json()
@@ -58,6 +86,7 @@ with st.sidebar:
             created = requests.post(
                 f"{API_URL}/api/conversations",
                 json={"title": new_title},
+                headers=API_HEADERS,
                 timeout=30,
             )
             if created.ok:
@@ -99,7 +128,9 @@ with st.sidebar:
     ):
         try:
             deleted = requests.delete(
-                f"{API_URL}/api/conversations/{selected_id}", timeout=30
+                f"{API_URL}/api/conversations/{selected_id}",
+                headers=API_HEADERS,
+                timeout=30,
             )
             if deleted.ok:
                 st.session_state.pop("conversation_id", None)
@@ -119,6 +150,7 @@ with st.sidebar:
             response = requests.post(
                 f"{API_URL}/api/documents/upload",
                 data={"conversation_id": selected_id},
+                headers=API_HEADERS,
                 files={
                     "file": (
                         upload.name,
@@ -146,6 +178,7 @@ with st.sidebar:
         response = requests.get(
             f"{API_URL}/api/documents",
             params={"conversation_id": selected_id},
+            headers=API_HEADERS,
             timeout=30,
         )
         response.raise_for_status()
@@ -162,6 +195,7 @@ with st.sidebar:
                     deleted = requests.delete(
                         f"{API_URL}/api/documents/{document['document_id']}",
                         params={"conversation_id": selected_id},
+                        headers=API_HEADERS,
                         timeout=30,
                     )
                     if deleted.ok:
@@ -172,7 +206,9 @@ with st.sidebar:
 
 try:
     history_response = requests.get(
-        f"{API_URL}/api/conversations/{selected_id}/messages", timeout=30
+        f"{API_URL}/api/conversations/{selected_id}/messages",
+        headers=API_HEADERS,
+        timeout=30,
     )
     history_response.raise_for_status()
     messages = history_response.json()
@@ -195,6 +231,7 @@ if question:
                 response = requests.post(
                     f"{API_URL}/api/chat",
                     json={"question": question, "conversation_id": selected_id},
+                    headers=API_HEADERS,
                     timeout=180,
                 )
                 if response.ok:

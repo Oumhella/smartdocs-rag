@@ -44,13 +44,17 @@ class RAGService:
         question: str,
         top_k: int = 4,
         conversation_id: str = DEFAULT_CONVERSATION_ID,
+        owner_user_id: str | None = None,
     ) -> dict[str, Any]:
         """Retrieve relevant chunks, call the LLM, and return validated sources."""
         if not question.strip():
             raise ValueError("question must not be empty")
 
         retrieved = self.vector_store.search(
-            query=question, top_k=top_k, conversation_id=conversation_id
+            query=question,
+            top_k=top_k,
+            conversation_id=conversation_id,
+            owner_user_id=owner_user_id,
         )
         relevant = [
             result

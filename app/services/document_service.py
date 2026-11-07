@@ -21,6 +21,7 @@ class DocumentService:
         self,
         file_path: str | Path,
         conversation_id: str = DEFAULT_CONVERSATION_ID,
+        owner_user_id: str | None = None,
     ) -> dict[str, str | int | bool]:
         """Extract, chunk, embed, and persist a PDF, TXT, or Markdown file."""
         path = Path(file_path)
@@ -39,7 +40,7 @@ class DocumentService:
 
         digest = _file_sha256(path)
         existing = self.vector_store.find_document_by_hash(
-            path.name, digest, conversation_id
+            path.name, digest, conversation_id, owner_user_id
         )
         if existing is not None:
             return {**existing, "duplicate": True}
@@ -49,6 +50,7 @@ class DocumentService:
             document_id,
             chunks,
             conversation_id=conversation_id,
+            owner_user_id=owner_user_id,
             content_sha256=digest,
         )
         return {
@@ -59,35 +61,54 @@ class DocumentService:
         }
 
     def delete_document(
-        self, document_id: str, conversation_id: str = DEFAULT_CONVERSATION_ID
+        self,
+        document_id: str,
+        conversation_id: str = DEFAULT_CONVERSATION_ID,
+        owner_user_id: str | None = None,
     ) -> int:
         """Delete a document's stored chunks by its returned document ID."""
-        return self.vector_store.delete_document(document_id, conversation_id)
+        return self.vector_store.delete_document(
+            document_id, conversation_id, owner_user_id
+        )
 
     def list_documents(
-        self, conversation_id: str = DEFAULT_CONVERSATION_ID
+        self,
+        conversation_id: str = DEFAULT_CONVERSATION_ID,
+        owner_user_id: str | None = None,
     ) -> list[dict[str, str | int]]:
         """List indexed documents with their stored chunk counts."""
-        return self.vector_store.list_documents(conversation_id)
+        return self.vector_store.list_documents(conversation_id, owner_user_id)
 
     def search(
         self,
         query: str,
         top_k: int = 4,
         conversation_id: str = DEFAULT_CONVERSATION_ID,
+        owner_user_id: str | None = None,
     ) -> list[dict[str, object]]:
         """Search indexed document chunks without generating an LLM answer."""
         return self.vector_store.search(
-            query=query, top_k=top_k, conversation_id=conversation_id
+            query=query,
+            top_k=top_k,
+            conversation_id=conversation_id,
+            owner_user_id=owner_user_id,
         )
 
     def migrate_legacy_chunks(self, conversation_id: str) -> int:
         """Put chunks created before conversations into the default workspace."""
         return self.vector_store.assign_legacy_chunks(conversation_id)
 
-    def delete_conversation(self, conversation_id: str) -> int:
+    def delete_conversation(
+        self, conversation_id: str, owner_user_id: str | None = None
+    ) -> int:
         """Remove every indexed chunk for a conversation."""
-        return self.vector_store.delete_conversation(conversation_id)
+        return self.vector_store.delete_conversation(conversation_id, owner_user_id)
+
+    def claim_conversations(self, conversation_ids: list[str], owner_user_id: str) -> int:
+        """Attach old conversation chunks to their newly assigned user."""
+        return self.vector_store.assign_conversation_owner(
+            conversation_ids, owner_user_id
+        )
 
 
 def _file_sha256(path: Path) -> str:

@@ -10,6 +10,7 @@ and Streamlit for the user interface.
 - Python 3.12 or newer with compatible package wheels. Python 3.13 is supported
   by current dependencies.
 - A Groq API key for chat answers.
+- A Clerk development application configured as an OpenID Connect provider.
 
 ## Install on Windows PowerShell
 
@@ -23,9 +24,30 @@ python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 ```
 
-Open `.env` and set `GROQ_API_KEY` to the key from your Groq console. Keep that
-key private; `.env` is ignored by Git. The default model is
-`openai/gpt-oss-20b`.
+Open `.env` and set `GROQ_API_KEY` to the key from your Groq console. Generate a
+long random `SMARTDOCS_INTERNAL_AUTH_TOKEN` with
+`python -c "import secrets; print(secrets.token_urlsafe(32))"` and add it to
+`.env`. Keep both values private; `.env` is ignored by Git. The default model
+is `openai/gpt-oss-20b`.
+
+Configure Clerk's OAuth/OIDC application for the local callback
+`http://localhost:8501/oauth2callback`. Create the Streamlit secrets file from
+the template and fill in the OAuth client ID, client secret, and Clerk
+development instance's OpenID Connect metadata URL:
+
+```powershell
+New-Item -ItemType Directory -Force .streamlit | Out-Null
+Copy-Item .streamlit/secrets.toml.example .streamlit/secrets.toml
+```
+
+The metadata URL has this form:
+`https://<your-clerk-instance>.clerk.accounts.dev/.well-known/oauth-authorization-server`.
+The client secret belongs only in `.streamlit/secrets.toml`; that file is
+ignored by Git. Streamlit completes Clerk sign-in and passes the verified Clerk
+user ID to FastAPI over the private server-to-server connection. FastAPI scopes
+conversations, document metadata, and vector searches to that user.
+The provider configuration sets `client_kwargs = { "prompt" = "login" }` to
+override Streamlit's default `select_account` prompt, which Clerk rejects.
 
 If the Python launcher does not have Python 3.13 registered, create the
 environment with the Python executable you installed, for example:
@@ -47,7 +69,8 @@ The API listens at `http://127.0.0.1:8000`. Its interactive endpoint
 documentation is at `http://127.0.0.1:8000/docs`; the health route is
 `http://127.0.0.1:8000/health`.
 
-Start Streamlit in a second terminal from the same project directory:
+Start Streamlit in a second terminal from the same project directory after
+creating `.streamlit/secrets.toml`:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
@@ -65,11 +88,16 @@ python -m streamlit run app/ui/streamlit_app.py
 
 ## Run with Docker Compose
 
-Docker Desktop with Docker Compose v2 is required. Create `.env` from the
-example once, then add your Groq API key:
+Docker Desktop with Docker Compose v2 is required. Create `.env` and Clerk
+secrets from their examples, then fill in the Groq key, internal random token,
+and Clerk OAuth values:
 
 ```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+New-Item -ItemType Directory -Force .streamlit | Out-Null
+if (-not (Test-Path .streamlit/secrets.toml)) {
+  Copy-Item .streamlit/secrets.toml.example .streamlit/secrets.toml
+}
 ```
 
 Build the application image and start the API and Streamlit services:
@@ -115,7 +143,9 @@ docker compose exec api python -m unittest discover -s tests -v
 | `GET` | `/health` | Confirm the API process is responding. |
 
 The default conversation keeps documents indexed before conversation support.
-New conversations isolate their files and retrieval results. SQLite persists
+On the first authenticated request, pre-authentication conversations and their
+chunks are assigned to that first Clerk user. New conversations belong to the
+user who creates them and isolate their files and retrieval results. SQLite persists
 conversation titles and message history under `data/chroma/`, alongside the
 ChromaDB data; the Docker `chroma-data` volume preserves both.
 

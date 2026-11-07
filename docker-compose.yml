@@ -69,6 +69,10 @@ services:
       - --browser.gatherUsageStats=false
     environment:
       SMARTDOCS_API_URL: http://api:8000
+    env_file:
+      - .env
+    volumes:
+      - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
     ports:
       - "8501:8501"
     depends_on:
