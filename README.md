@@ -51,7 +51,7 @@ Start Streamlit in a second terminal from the same project directory:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python -m streamlit run streamlit_app.py
+python -m streamlit run app/ui/streamlit_app.py
 ```
 
 Streamlit opens in your browser and connects to the API at
@@ -60,7 +60,7 @@ Streamlit opens in your browser and connects to the API at
 
 ```powershell
 $env:SMARTDOCS_API_URL = "http://127.0.0.1:8000"
-python -m streamlit run streamlit_app.py
+python -m streamlit run app/ui/streamlit_app.py
 ```
 
 ## API overview
@@ -76,6 +76,13 @@ python -m streamlit run streamlit_app.py
 The chat response includes `answer` and `sources`. Each source includes its
 source ID, filename, page number when available, chunk index, and similarity
 returned by retrieval. TXT and Markdown files do not have page numbers.
+
+## Evaluation
+
+Run the 30-question retrieval benchmark and local reliability checks using the
+instructions in [evaluation/README.md](evaluation/README.md). The benchmark
+reports Hit Rate@K, MRR@K, and retrieval latency; it does not score generated
+answer faithfulness or answer relevance yet.
 
 ## Local data
 

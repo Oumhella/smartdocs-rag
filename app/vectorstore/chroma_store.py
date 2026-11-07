@@ -33,7 +33,13 @@ class ChromaVectorStore:
             metadata={"hnsw:space": "cosine"},
         )
 
-    def add_document(self, document_id: str, chunks: list[TextChunk]) -> int:
+    def add_document(
+        self,
+        document_id: str,
+        chunks: list[TextChunk],
+        *,
+        content_sha256: str | None = None,
+    ) -> int:
         """Embed and store one document's chunks; return the number stored."""
         if not document_id:
             raise ValueError("document_id must not be empty")
@@ -54,6 +60,8 @@ class ChromaVectorStore:
                 "filename": chunk["filename"],
                 "chunk_index": chunk["chunk_index"],
             }
+            if content_sha256 is not None:
+                metadata["content_sha256"] = content_sha256
             # Chroma metadata does not accept None; text formats have no page.
             if chunk["page_number"] is not None:
                 metadata["page_number"] = chunk["page_number"]
@@ -80,6 +88,27 @@ class ChromaVectorStore:
         if ids:
             self.collection.delete(ids=ids)
         return len(ids)
+
+    def find_document_by_hash(
+        self, filename: str, content_sha256: str
+    ) -> dict[str, str | int] | None:
+        """Find a previously indexed document with the same name and bytes."""
+        matches = self.collection.get(
+            where={"content_sha256": content_sha256},
+            include=["metadatas"],
+        )
+        duplicate_metadata = [
+            metadata
+            for metadata in matches["metadatas"] or []
+            if metadata and metadata.get("filename") == filename
+        ]
+        for metadata in duplicate_metadata:
+            return {
+                "document_id": str(metadata["document_id"]),
+                "filename": filename,
+                "chunks_stored": len(duplicate_metadata),
+            }
+        return None
 
     def list_documents(self) -> list[dict[str, str | int]]:
         """Summarize stored chunks as one record per indexed document."""

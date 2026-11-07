@@ -1,0 +1,242 @@
+[
+  {
+    "id": "absence-001",
+    "question": "Who should an employee telephone when they cannot come to work because of sickness or injury?",
+    "expected_answer": "Their line manager.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "telephone your line manager"
+  },
+  {
+    "id": "absence-002",
+    "question": "How early should an employee report sickness absence?",
+    "expected_answer": "As early as possible, and within the policy's specified timeframe of the normal start time.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "as early as possible"
+  },
+  {
+    "id": "absence-003",
+    "question": "What reporting-time placeholder appears in the policy?",
+    "expected_answer": "[30 minutes / OTHER TIMEFRAME].",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "[30 minutes / OTHER TIMEFRAME]"
+  },
+  {
+    "id": "absence-004",
+    "question": "What evidence is required for sickness absence of up to seven calendar days?",
+    "expected_answer": "A self-certification form.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "self-certification form for sickness absence of up to seven calendar days"
+  },
+  {
+    "id": "absence-005",
+    "question": "To whom should the self-certification form be sent?",
+    "expected_answer": "To [JOB TITLE].",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "send to [JOB TITLE]"
+  },
+  {
+    "id": "absence-006",
+    "question": "What evidence is needed if sickness absence lasts more than a week?",
+    "expected_answer": "A relevant certificate from a healthcare professional, called a fit note.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "relevant certificate from a healthcare professional, called a fit note"
+  },
+  {
+    "id": "absence-007",
+    "question": "What does the fit note state?",
+    "expected_answer": "Why the employee is not fit for work.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "will state why you are not fit for work"
+  },
+  {
+    "id": "absence-008",
+    "question": "Does an employee still need to self-certify the first seven days when the absence lasts more than a week?",
+    "expected_answer": "Yes. They must complete self-certification for the first seven days.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "self-certification form in relation to the first seven days"
+  },
+  {
+    "id": "absence-009",
+    "question": "What must an employee do if sickness continues after their fit note expires?",
+    "expected_answer": "Provide a new certificate covering the continued absence.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "provide us with a new certificate covering your continued absence"
+  },
+  {
+    "id": "absence-010",
+    "question": "Who should an employee tell if a healthcare professional says they may be fit for work?",
+    "expected_answer": "Their manager.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "important that you tell your manager"
+  },
+  {
+    "id": "absence-011",
+    "question": "What happens after the employee tells their manager that a fit note says they may be fit for work?",
+    "expected_answer": "They can discuss arrangements for the employee's return to work.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "discuss with you arrangements for your return to work"
+  },
+  {
+    "id": "absence-012",
+    "question": "What if appropriate steps cannot be taken for an employee who may be fit for work?",
+    "expected_answer": "The employee remains on sick leave, and the position is reviewed at an appropriate interval.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "you will remain on sick leave"
+  },
+  {
+    "id": "absence-013",
+    "question": "Does the policy say the company provides contractual sick pay above statutory sick pay?",
+    "expected_answer": "The policy leaves this unspecified with the placeholder [do OR do not].",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "[do OR do not] provide contractual sick pay"
+  },
+  {
+    "id": "absence-014",
+    "question": "When will confirmation of contractual sick pay entitlement be provided?",
+    "expected_answer": "The policy says confirmation will be provided by the employee's manager or the Human Resources team, but leaves the choice in a placeholder.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "Confirmation of your contractual sick pay entitlement will be provided by your manager"
+  },
+  {
+    "id": "absence-015",
+    "question": "What does the policy say about contractual sick pay and statutory sick pay being inclusive?",
+    "expected_answer": "It leaves this unspecified with the placeholder [Any contractual sick pay will be inclusive of your statutory sick pay].",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "Any contractual sick pay will be inclusive of your statutory sick pay"
+  },
+  {
+    "id": "absence-016",
+    "question": "Is statutory sick pay paid for the first three consecutive days of sickness absence?",
+    "expected_answer": "No. Statutory sick pay is not paid for the first three consecutive days.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "not paid for the first three consecutive days"
+  },
+  {
+    "id": "absence-017",
+    "question": "For how long may statutory sick pay be payable?",
+    "expected_answer": "Up to 28 weeks, if statutory requirements are met.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 1,
+    "expected_passage": "may be payable for up to 28 weeks"
+  },
+  {
+    "id": "absence-018",
+    "question": "Who may hold a return-to-work interview after an employee has been absent with illness?",
+    "expected_answer": "The employee's line manager may hold one.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 2,
+    "expected_passage": "your line manager may hold a return-to-work interview"
+  },
+  {
+    "id": "absence-019",
+    "question": "What is one purpose of the return-to-work interview?",
+    "expected_answer": "To check that the employee is fit enough to return and consider steps that could help.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 2,
+    "expected_passage": "check that you are fit enough to return to work"
+  },
+  {
+    "id": "absence-020",
+    "question": "What may the employer need to understand before deciding what to do about long or frequent absences?",
+    "expected_answer": "The reasons for the absence, potentially using medical information.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 2,
+    "expected_passage": "understand the reasons for your absence"
+  },
+  {
+    "id": "absence-021",
+    "question": "What notice will be given for a meeting about sickness absence?",
+    "expected_answer": "Reasonable notice of the meeting and its location.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 2,
+    "expected_passage": "give you reasonable notice of the meeting and location"
+  },
+  {
+    "id": "absence-022",
+    "question": "What should an employee do if they cannot attend a sickness-absence meeting at the specified time?",
+    "expected_answer": "Let the employer know as soon as possible; another time will be arranged.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 2,
+    "expected_passage": "let us know as soon as possible"
+  },
+  {
+    "id": "absence-023",
+    "question": "What adjustments may be considered for the sickness-absence process?",
+    "expected_answer": "Reasonable adjustments to the procedure, the employee's role, or working arrangements.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 2,
+    "expected_passage": "reasonable adjustments may need to be made"
+  },
+  {
+    "id": "absence-024",
+    "question": "Whom might the employer ask an employee to see for a medical assessment?",
+    "expected_answer": "A doctor or occupational health adviser; sometimes a specialist medical practitioner.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 2,
+    "expected_passage": "medical assessment by a doctor or occupational health adviser"
+  },
+  {
+    "id": "absence-025",
+    "question": "Are medical reports kept confidential?",
+    "expected_answer": "Yes. All medical reports will be kept confidential.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 2,
+    "expected_passage": "All medical reports will be kept confidential"
+  },
+  {
+    "id": "absence-026",
+    "question": "What may a first sickness-absence meeting discuss?",
+    "expected_answer": "The reasons for absence, likely next steps, and prognosis.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 2,
+    "expected_passage": "reasons for your absence, the likely next steps and prognosis"
+  },
+  {
+    "id": "absence-027",
+    "question": "What may the company set for regular short-term absence concerns?",
+    "expected_answer": "Targets for improvements.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 2,
+    "expected_passage": "may set you targets for improvements"
+  },
+  {
+    "id": "absence-028",
+    "question": "How must an employee submit an appeal under this policy?",
+    "expected_answer": "They must set out the appeal grounds in writing.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 3,
+    "expected_passage": "set out your appeal grounds in writing"
+  },
+  {
+    "id": "absence-029",
+    "question": "What placeholder specifies the deadline to submit an appeal?",
+    "expected_answer": "[within one week].",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 3,
+    "expected_passage": "[within one week]"
+  },
+  {
+    "id": "absence-030",
+    "question": "How soon will an appeal meeting be held, and when is the decision usually provided?",
+    "expected_answer": "The meeting is sought within [three weeks] of receiving the appeal; the decision is usually provided within [two weeks] of the appeal hearing.",
+    "source_document": "mpe-sickness-absence-policy.pdf",
+    "expected_page": 3,
+    "expected_passage": "within [three weeks] of receiving your appeal"
+  }
+]

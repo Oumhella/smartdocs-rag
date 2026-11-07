@@ -47,9 +47,12 @@ with st.sidebar:
             )
             if response.ok:
                 result = response.json()
-                st.success(
-                    f"Indexed {result['filename']} ({result['chunks_stored']} chunks)."
-                )
+                if result.get("duplicate"):
+                    st.info(f"{result['filename']} is already indexed.")
+                else:
+                    st.success(
+                        f"Indexed {result['filename']} ({result['chunks_stored']} chunks)."
+                    )
             else:
                 st.error(api_error(response))
         except requests.RequestException as error:
