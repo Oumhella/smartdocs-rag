@@ -105,10 +105,19 @@ docker compose exec api python -m unittest discover -s tests -v
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/documents/upload` | Upload and index a PDF, TXT, or Markdown file. |
-| `GET` | `/api/documents` | List indexed documents and their chunk counts. |
-| `DELETE` | `/api/documents/{document_id}` | Delete one indexed document and its chunks. |
-| `POST` | `/api/chat` | Ask a question; accepts `{"question": "...", "top_k": 4}`. |
+| `GET` | `/api/conversations` | List conversations. |
+| `POST` | `/api/conversations` | Create a conversation with `{"title": "..."}`. |
+| `GET` | `/api/conversations/{id}/messages` | Load saved messages and source references. |
+| `DELETE` | `/api/conversations/{id}` | Delete a conversation, its messages, and indexed chunks. |
+| `GET` | `/api/documents?conversation_id=...` | List files in one conversation. |
+| `DELETE` | `/api/documents/{document_id}?conversation_id=...` | Delete one file from a conversation. |
+| `POST` | `/api/chat` | Ask a question; accepts `{"question": "...", "top_k": 4, "conversation_id": "..."}`. |
 | `GET` | `/health` | Confirm the API process is responding. |
+
+The default conversation keeps documents indexed before conversation support.
+New conversations isolate their files and retrieval results. SQLite persists
+conversation titles and message history under `data/chroma/`, alongside the
+ChromaDB data; the Docker `chroma-data` volume preserves both.
 
 The chat response includes `answer` and `sources`. Each source includes its
 source ID, filename, page number when available, chunk index, and similarity

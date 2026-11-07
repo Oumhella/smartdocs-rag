@@ -27,17 +27,22 @@ class ChromaVectorStore:
         self.persist_directory.mkdir(parents=True, exist_ok=True)
         self.embedder = embedder or TextEmbedder()
 
-        client = chromadb.PersistentClient(path=str(self.persist_directory))
-        self.collection = client.get_or_create_collection(
+        self.client = chromadb.PersistentClient(path=str(self.persist_directory))
+        self.collection = self.client.get_or_create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"},
         )
+
+    def close(self) -> None:
+        """Close the persistent client (useful for short-lived tools/tests)."""
+        self.client.close()
 
     def add_document(
         self,
         document_id: str,
         chunks: list[TextChunk],
         *,
+        conversation_id: str,
         content_sha256: str | None = None,
     ) -> int:
         """Embed and store one document's chunks; return the number stored."""
@@ -57,6 +62,7 @@ class ChromaVectorStore:
             ids.append(f"{document_id}:{position}")
             metadata: dict[str, str | int] = {
                 "document_id": document_id,
+                "conversation_id": conversation_id,
                 "filename": chunk["filename"],
                 "chunk_index": chunk["chunk_index"],
             }
@@ -75,13 +81,18 @@ class ChromaVectorStore:
         )
         return len(chunks)
 
-    def delete_document(self, document_id: str) -> int:
+    def delete_document(
+        self, document_id: str, conversation_id: str | None = None
+    ) -> int:
         """Delete every chunk belonging to a document; return chunks deleted."""
         if not document_id:
             raise ValueError("document_id must not be empty")
 
+        where: dict[str, Any] = {"document_id": document_id}
+        if conversation_id is not None:
+            where = {"$and": [where, {"conversation_id": conversation_id}]}
         existing = self.collection.get(
-            where={"document_id": document_id},
+            where=where,
             include=["metadatas"],
         )
         ids = existing["ids"]
@@ -90,11 +101,14 @@ class ChromaVectorStore:
         return len(ids)
 
     def find_document_by_hash(
-        self, filename: str, content_sha256: str
+        self, filename: str, content_sha256: str, conversation_id: str
     ) -> dict[str, str | int] | None:
         """Find a previously indexed document with the same name and bytes."""
         matches = self.collection.get(
-            where={"content_sha256": content_sha256},
+            where={"$and": [
+                {"content_sha256": content_sha256},
+                {"conversation_id": conversation_id},
+            ]},
             include=["metadatas"],
         )
         duplicate_metadata = [
@@ -110,9 +124,14 @@ class ChromaVectorStore:
             }
         return None
 
-    def list_documents(self) -> list[dict[str, str | int]]:
+    def list_documents(
+        self, conversation_id: str | None = None
+    ) -> list[dict[str, str | int]]:
         """Summarize stored chunks as one record per indexed document."""
-        stored = self.collection.get(include=["metadatas"])
+        stored = self.collection.get(
+            where={"conversation_id": conversation_id} if conversation_id else None,
+            include=["metadatas"],
+        )
         documents: dict[str, dict[str, str | int]] = {}
 
         for metadata in stored["metadatas"] or []:
@@ -135,7 +154,12 @@ class ChromaVectorStore:
             key=lambda document: str(document["filename"]).casefold(),
         )
 
-    def search(self, query: str, top_k: int = 4) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 4,
+        conversation_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Return nearest chunks, their metadata, cosine distance and similarity."""
         if not query.strip():
             raise ValueError("query must not be empty")
@@ -148,6 +172,7 @@ class ChromaVectorStore:
         matches = self.collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
+            where={"conversation_id": conversation_id} if conversation_id else None,
             include=["documents", "metadatas", "distances"],
         )
 
@@ -171,3 +196,28 @@ class ChromaVectorStore:
             )
 
         return results
+
+    def assign_legacy_chunks(self, conversation_id: str) -> int:
+        """Assign pre-conversation chunks to the initial/default conversation."""
+        legacy = self.collection.get(include=["metadatas"])
+        ids: list[str] = []
+        metadatas: list[dict[str, Any]] = []
+        for chunk_id, metadata in zip(legacy["ids"], legacy["metadatas"] or []):
+            updated = dict(metadata or {})
+            if "conversation_id" not in updated:
+                updated["conversation_id"] = conversation_id
+                ids.append(chunk_id)
+                metadatas.append(updated)
+        if ids:
+            self.collection.update(ids=ids, metadatas=metadatas)
+        return len(ids)
+
+    def delete_conversation(self, conversation_id: str) -> int:
+        """Delete all indexed chunks for one conversation."""
+        existing = self.collection.get(
+            where={"conversation_id": conversation_id}, include=["metadatas"]
+        )
+        ids = existing["ids"]
+        if ids:
+            self.collection.delete(ids=ids)
+        return len(ids)

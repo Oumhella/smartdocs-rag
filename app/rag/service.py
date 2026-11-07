@@ -11,6 +11,7 @@ from app.rag.prompts import (
     SYSTEM_PROMPT,
     UNVERIFIABLE_ANSWER,
 )
+from app.services.conversation_service import DEFAULT_CONVERSATION_ID
 from app.vectorstore.chroma_store import ChromaVectorStore
 
 
@@ -38,12 +39,19 @@ class RAGService:
         self.vector_store = vector_store or ChromaVectorStore()
         self.llm_client = llm_client or GroqLLMClient(self.settings)
 
-    def answer(self, question: str, top_k: int = 4) -> dict[str, Any]:
+    def answer(
+        self,
+        question: str,
+        top_k: int = 4,
+        conversation_id: str = DEFAULT_CONVERSATION_ID,
+    ) -> dict[str, Any]:
         """Retrieve relevant chunks, call the LLM, and return validated sources."""
         if not question.strip():
             raise ValueError("question must not be empty")
 
-        retrieved = self.vector_store.search(query=question, top_k=top_k)
+        retrieved = self.vector_store.search(
+            query=question, top_k=top_k, conversation_id=conversation_id
+        )
         relevant = [
             result
             for result in retrieved

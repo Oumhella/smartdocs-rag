@@ -7,6 +7,7 @@ from uuid import uuid4
 import pymupdf
 
 from app.ingestion.pdf import process_document
+from app.services.conversation_service import DEFAULT_CONVERSATION_ID
 from app.vectorstore.chroma_store import ChromaVectorStore
 
 
@@ -16,7 +17,11 @@ class DocumentService:
     def __init__(self, vector_store: ChromaVectorStore | None = None) -> None:
         self.vector_store = vector_store or ChromaVectorStore()
 
-    def index_file(self, file_path: str | Path) -> dict[str, str | int | bool]:
+    def index_file(
+        self,
+        file_path: str | Path,
+        conversation_id: str = DEFAULT_CONVERSATION_ID,
+    ) -> dict[str, str | int | bool]:
         """Extract, chunk, embed, and persist a PDF, TXT, or Markdown file."""
         path = Path(file_path)
         invalid_document = False
@@ -33,7 +38,9 @@ class DocumentService:
             raise ValueError(f"No extractable text found in {path.name}")
 
         digest = _file_sha256(path)
-        existing = self.vector_store.find_document_by_hash(path.name, digest)
+        existing = self.vector_store.find_document_by_hash(
+            path.name, digest, conversation_id
+        )
         if existing is not None:
             return {**existing, "duplicate": True}
 
@@ -41,6 +48,7 @@ class DocumentService:
         chunk_count = self.vector_store.add_document(
             document_id,
             chunks,
+            conversation_id=conversation_id,
             content_sha256=digest,
         )
         return {
@@ -50,17 +58,36 @@ class DocumentService:
             "duplicate": False,
         }
 
-    def delete_document(self, document_id: str) -> int:
+    def delete_document(
+        self, document_id: str, conversation_id: str = DEFAULT_CONVERSATION_ID
+    ) -> int:
         """Delete a document's stored chunks by its returned document ID."""
-        return self.vector_store.delete_document(document_id)
+        return self.vector_store.delete_document(document_id, conversation_id)
 
-    def list_documents(self) -> list[dict[str, str | int]]:
+    def list_documents(
+        self, conversation_id: str = DEFAULT_CONVERSATION_ID
+    ) -> list[dict[str, str | int]]:
         """List indexed documents with their stored chunk counts."""
-        return self.vector_store.list_documents()
+        return self.vector_store.list_documents(conversation_id)
 
-    def search(self, query: str, top_k: int = 4) -> list[dict[str, object]]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 4,
+        conversation_id: str = DEFAULT_CONVERSATION_ID,
+    ) -> list[dict[str, object]]:
         """Search indexed document chunks without generating an LLM answer."""
-        return self.vector_store.search(query=query, top_k=top_k)
+        return self.vector_store.search(
+            query=query, top_k=top_k, conversation_id=conversation_id
+        )
+
+    def migrate_legacy_chunks(self, conversation_id: str) -> int:
+        """Put chunks created before conversations into the default workspace."""
+        return self.vector_store.assign_legacy_chunks(conversation_id)
+
+    def delete_conversation(self, conversation_id: str) -> int:
+        """Remove every indexed chunk for a conversation."""
+        return self.vector_store.delete_conversation(conversation_id)
 
 
 def _file_sha256(path: Path) -> str:

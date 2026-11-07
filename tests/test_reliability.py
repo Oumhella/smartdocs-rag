@@ -15,6 +15,7 @@ from app.ingestion.pdf import process_document
 from app.rag.prompts import SYSTEM_PROMPT
 from app.rag.service import RAGService
 from app.services.document_service import DocumentService
+from app.services.conversation_service import DEFAULT_CONVERSATION_ID
 
 
 class StubVectorStore:
@@ -22,7 +23,12 @@ class StubVectorStore:
         self.similarity = similarity
         self.text = text
 
-    def search(self, query: str, top_k: int = 4) -> list[dict[str, object]]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 4,
+        conversation_id: str | None = None,
+    ) -> list[dict[str, object]]:
         return [
             {
                 "text": self.text,
@@ -38,12 +44,12 @@ class StubVectorStore:
 
 class MemoryDocumentStore:
     def __init__(self) -> None:
-        self.documents: dict[tuple[str, str], dict[str, object]] = {}
+        self.documents: dict[tuple[str, str, str], dict[str, object]] = {}
 
     def find_document_by_hash(
-        self, filename: str, content_sha256: str
+        self, filename: str, content_sha256: str, conversation_id: str
     ) -> dict[str, str | int] | None:
-        document = self.documents.get((filename, content_sha256))
+        document = self.documents.get((filename, content_sha256, conversation_id))
         if document is None:
             return None
         return {
@@ -57,25 +63,47 @@ class MemoryDocumentStore:
         document_id: str,
         chunks: list[dict[str, object]],
         *,
+        conversation_id: str,
         content_sha256: str,
     ) -> int:
         filename = str(chunks[0]["filename"])
-        self.documents[(filename, content_sha256)] = {
+        self.documents[(filename, content_sha256, conversation_id)] = {
             "document_id": document_id,
             "filename": filename,
             "chunks_stored": len(chunks),
         }
         return len(chunks)
 
-    def list_documents(self) -> list[dict[str, str | int]]:
+    def list_documents(
+        self, conversation_id: str | None = None
+    ) -> list[dict[str, str | int]]:
         return [
             {
                 "document_id": str(document["document_id"]),
                 "filename": str(document["filename"]),
                 "chunks_stored": int(document["chunks_stored"]),
             }
-            for document in self.documents.values()
+            for (filename, _digest, owner), document in self.documents.items()
+            if conversation_id is None or owner == conversation_id
         ]
+
+    def delete_document(self, document_id: str, conversation_id: str | None = None) -> int:
+        for key, document in list(self.documents.items()):
+            if document["document_id"] == document_id and (
+                conversation_id is None or key[2] == conversation_id
+            ):
+                del self.documents[key]
+                return int(document["chunks_stored"])
+        return 0
+
+    def assign_legacy_chunks(self, conversation_id: str) -> int:
+        return 0
+
+    def delete_conversation(self, conversation_id: str) -> int:
+        removed = [key for key in self.documents if key[2] == conversation_id]
+        for key in removed:
+            del self.documents[key]
+        return len(removed)
 
 
 class CapturingLLM:
