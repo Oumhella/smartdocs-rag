@@ -1,0 +1,81 @@
+services:
+  volume-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Docker creates new named volumes as root-owned. Prepare them before the
+    # non-root API starts; marker files avoid repeating recursive chown later.
+    user: "0:0"
+    entrypoint:
+      - sh
+      - -c
+    command:
+      - >-
+        if [ ! -f /chroma/.smartdocs-volume-ready ]; then
+          chown -R smartdocs:smartdocs /chroma &&
+          touch /chroma/.smartdocs-volume-ready &&
+          chown smartdocs:smartdocs /chroma/.smartdocs-volume-ready;
+        fi;
+        if [ ! -f /huggingface/.smartdocs-volume-ready ]; then
+          chown -R smartdocs:smartdocs /huggingface &&
+          touch /huggingface/.smartdocs-volume-ready &&
+          chown smartdocs:smartdocs /huggingface/.smartdocs-volume-ready;
+        fi
+    volumes:
+      - chroma-data:/chroma
+      - huggingface-cache:/huggingface
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      HF_HOME: /home/smartdocs/.cache/huggingface
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/app/data/chroma
+      - huggingface-cache:/home/smartdocs/.cache/huggingface
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      - python
+      - -m
+      - streamlit
+      - run
+      - app/ui/streamlit_app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --browser.gatherUsageStats=false
+    environment:
+      SMARTDOCS_API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  chroma-data:
+  huggingface-cache:

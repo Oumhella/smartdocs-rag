@@ -19,7 +19,7 @@ Run these commands from the project directory:
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 ```
 
@@ -63,6 +63,43 @@ $env:SMARTDOCS_API_URL = "http://127.0.0.1:8000"
 python -m streamlit run app/ui/streamlit_app.py
 ```
 
+## Run with Docker Compose
+
+Docker Desktop with Docker Compose v2 is required. Create `.env` from the
+example once, then add your Groq API key:
+
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+Build the application image and start the API and Streamlit services:
+
+```powershell
+docker compose up --build -d
+docker compose ps
+```
+
+Open Streamlit at `http://localhost:8501`. The API is available at
+`http://localhost:8000`, with interactive API docs at
+`http://localhost:8000/docs`. Compose waits for the API health check before it
+starts the frontend. View logs with `docker compose logs -f` and stop the
+services with `docker compose down`.
+
+ChromaDB persists in the `chroma-data` named volume, and downloaded embedding
+model files persist in `huggingface-cache`. `docker compose down` keeps both
+volumes, so indexed documents remain available after a restart. Avoid
+`docker compose down -v` unless you intend to permanently delete the index and
+model cache. Compose first runs a small root-owned initializer that fixes the
+ownership of both volumes for the non-root application user. A marker prevents
+repeating the recursive permission change on later starts, so existing Chroma
+data is retained.
+
+Run the unit and API tests in the API container after starting Compose:
+
+```powershell
+docker compose exec api python -m unittest discover -s tests -v
+```
+
 ## API overview
 
 | Method | Endpoint | Purpose |
@@ -83,6 +120,13 @@ Run the 30-question retrieval benchmark and local reliability checks using the
 instructions in [evaluation/README.md](evaluation/README.md). The benchmark
 reports Hit Rate@K, MRR@K, and retrieval latency; it does not score generated
 answer faithfulness or answer relevance yet.
+
+## Architecture
+
+See [the architecture diagram](docs/architecture.md) for the upload, retrieval,
+LLM, persistence, and response flow. Screenshots are not included yet; the
+headless browser available during setup returned blank captures, so they need
+to be captured from a normal browser session to accurately represent the app.
 
 ## Local data
 
