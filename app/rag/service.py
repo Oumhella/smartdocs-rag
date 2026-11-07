@@ -1,6 +1,7 @@
 """Retrieve evidence and generate answers with validated source references."""
 
 import json
+import re
 from typing import Any
 
 from app.core.config import Settings
@@ -23,6 +24,26 @@ ANSWER_SCHEMA: dict[str, Any] = {
     },
     "required": ["answer", "source_ids"],
     "additionalProperties": False,
+}
+
+SMALL_TALK_RESPONSES = {
+    "hi": "Hi! I’m SmartDocs. Ask me a question about documents indexed in this conversation.",
+    "hello": "Hello! I’m SmartDocs. Ask me a question about documents indexed in this conversation.",
+    "hey": "Hey! I’m SmartDocs. Ask me a question about documents indexed in this conversation.",
+    "hey there": "Hey! I’m SmartDocs. Ask me a question about documents indexed in this conversation.",
+    "hello there": "Hello! I’m SmartDocs. Ask me a question about documents indexed in this conversation.",
+    "good morning": "Good morning! I’m SmartDocs. Ask me a question about documents indexed in this conversation.",
+    "good afternoon": "Good afternoon! I’m SmartDocs. Ask me a question about documents indexed in this conversation.",
+    "good evening": "Good evening! I’m SmartDocs. Ask me a question about documents indexed in this conversation.",
+    "how are you": "I’m ready to help you find answers in the documents indexed in this conversation.",
+    "how are you doing": "I’m ready to help you find answers in the documents indexed in this conversation.",
+    "thanks": "You’re welcome! Ask me whenever you need help with your documents.",
+    "thank you": "You’re welcome! Ask me whenever you need help with your documents.",
+    "thanks a lot": "You’re welcome! Ask me whenever you need help with your documents.",
+    "who are you": "I’m SmartDocs. I answer questions using documents indexed in the active conversation and cite the passages I use.",
+    "what can you do": "I can search the documents indexed in this conversation and answer questions with source references. Upload a PDF, TXT, or Markdown file to get started.",
+    "what do you do": "I search the documents indexed in this conversation and answer questions with source references.",
+    "help": "Upload a PDF, TXT, or Markdown file to this conversation, then ask a question about its contents.",
 }
 
 
@@ -50,6 +71,15 @@ class RAGService:
         if not question.strip():
             raise ValueError("question must not be empty")
 
+        small_talk = _small_talk_response(question)
+        if small_talk is not None:
+            return {
+                "answer": small_talk,
+                "sources": [],
+                "retrieved_count": 0,
+                "used_llm": False,
+            }
+
         retrieved = self.vector_store.search(
             query=question,
             top_k=top_k,
@@ -68,6 +98,9 @@ class RAGService:
                 "sources": [],
                 "retrieved_count": len(retrieved),
                 "used_llm": False,
+                "retrieval_diagnostics": _retrieval_diagnostics(
+                    retrieved, self.settings.rag_min_similarity
+                ),
             }
 
         source_map: dict[str, dict[str, Any]] = {}
@@ -123,6 +156,9 @@ class RAGService:
                 "sources": [],
                 "retrieved_count": len(retrieved),
                 "used_llm": True,
+                "retrieval_diagnostics": _retrieval_diagnostics(
+                    retrieved, self.settings.rag_min_similarity
+                ),
             }
 
         answer_text = payload["answer"].strip()
@@ -134,6 +170,9 @@ class RAGService:
                 "sources": [],
                 "retrieved_count": len(retrieved),
                 "used_llm": True,
+                "retrieval_diagnostics": _retrieval_diagnostics(
+                    retrieved, self.settings.rag_min_similarity
+                ),
             }
 
         # Reject unknown IDs so a model cannot create a citation that looks real.
@@ -143,6 +182,9 @@ class RAGService:
                 "sources": [],
                 "retrieved_count": len(retrieved),
                 "used_llm": True,
+                "retrieval_diagnostics": _retrieval_diagnostics(
+                    retrieved, self.settings.rag_min_similarity
+                ),
             }
 
         references = ", ".join(f"[{label}]" for label in cited_labels)
@@ -152,3 +194,33 @@ class RAGService:
             "retrieved_count": len(retrieved),
             "used_llm": True,
         }
+
+
+def _small_talk_response(question: str) -> str | None:
+    """Answer exact conversational openers without searching or calling the LLM."""
+    normalized = re.sub(r"[^\w\s]", "", question.casefold())
+    normalized = " ".join(normalized.split())
+    return SMALL_TALK_RESPONSES.get(normalized)
+
+
+def _retrieval_diagnostics(
+    results: list[dict[str, Any]], minimum_similarity: float
+) -> dict[str, Any]:
+    """Expose short, conversation-scoped candidate previews for failed answers."""
+    candidates = []
+    for result in results:
+        metadata = result.get("metadata") or {}
+        text = str(result.get("text") or "").strip()
+        candidates.append(
+            {
+                "filename": metadata.get("filename", "Unknown"),
+                "page_number": metadata.get("page_number"),
+                "chunk_index": metadata.get("chunk_index"),
+                "similarity": float(result.get("similarity", 0.0)),
+                "preview": text[:400] + ("…" if len(text) > 400 else ""),
+            }
+        )
+    return {
+        "minimum_similarity": minimum_similarity,
+        "candidates": candidates,
+    }

@@ -63,6 +63,36 @@ def show_sources(sources: list[dict[str, object]]) -> None:
             )
 
 
+def show_retrieval_diagnostics(diagnostics: dict[str, object] | None) -> None:
+    """Show the top candidate chunks when retrieval could not support an answer."""
+    if not diagnostics:
+        return
+    candidates = diagnostics.get("candidates", [])
+    if not isinstance(candidates, list):
+        return
+
+    with st.expander("Why couldn't SmartDocs answer? See retrieved passages"):
+        threshold = float(diagnostics.get("minimum_similarity", 0.0))
+        st.caption(
+            f"Minimum accepted similarity: {threshold:.3f}. "
+            "Similarity is a retrieval score, not a probability."
+        )
+        if not candidates:
+            st.info("No document chunks were retrieved from this conversation.")
+            return
+        for rank, candidate in enumerate(candidates, start=1):
+            if not isinstance(candidate, dict):
+                continue
+            page = candidate.get("page_number")
+            location = f", page {page}" if page is not None else ""
+            st.markdown(
+                f"**{rank}. {candidate.get('filename', 'Unknown')}**{location} "
+                f"· chunk {candidate.get('chunk_index', '?')} · "
+                f"similarity {float(candidate.get('similarity', 0.0)):.3f}"
+            )
+            st.caption(str(candidate.get("preview", "")))
+
+
 with st.sidebar:
     st.caption(f"Signed in as {st.user.get('email', CLERK_USER_ID)}")
     if st.button("Sign out"):
@@ -235,7 +265,13 @@ if question:
                     timeout=180,
                 )
                 if response.ok:
-                    st.rerun()
-                st.error(api_error(response))
+                    result = response.json()
+                    st.markdown(str(result.get("answer", "")))
+                    show_sources(result.get("sources", []))
+                    show_retrieval_diagnostics(
+                        result.get("retrieval_diagnostics")
+                    )
+                else:
+                    st.error(api_error(response))
             except requests.RequestException as error:
                 st.error(f"Could not reach the SmartDocs API: {error}")
